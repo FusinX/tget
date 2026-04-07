@@ -11,6 +11,13 @@ import fs from "fs";
 import { exec } from "child_process";
 import readline from "readline";
 
+// Suppress uTP warning — non-fatal, TCP fallback works fine
+const _error = console.error;
+console.error = (...args) => {
+  if (typeof args[0] === "string" && args[0].includes("uTP not supported")) return;
+  _error(...args);
+};
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
