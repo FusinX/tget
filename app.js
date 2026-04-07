@@ -70,52 +70,81 @@ function onTorrent(torrent) {
   // -------------------------------------------------------------------------
   if (argv.stream) {
     import("http").then(({ default: http }) => {
-      const server = http.createServer((req, res) => {
-        const index = parseInt(req.url.slice(1)) || 0;
-        const file  = torrent.files[index];
+      import("path").then(({ default: path }) => {
 
-        if (!file) {
-          res.writeHead(404);
-          res.end("File not found");
-          return;
-        }
+        const mimeTypes = {
+          ".mkv": "video/x-matroska",
+          ".mp4": "video/mp4",
+          ".avi": "video/x-msvideo",
+          ".mov": "video/quicktime",
+          ".webm": "video/webm"
+        };
 
-        const fileSize = file.length;
-        const range    = req.headers.range;
+        const server = http.createServer((req, res) => {
+          const index = parseInt(req.url.replace("/", "")) || 0;
+          const file  = torrent.files[index];
 
-        if (range) {
-          const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
-          const start = parseInt(startStr, 10);
-          const end   = endStr ? parseInt(endStr, 10) : fileSize - 1;
+          if (!file) {
+            res.writeHead(404);
+            res.end("File not found");
+            return;
+          }
 
-          res.writeHead(206, {
-            "Content-Range":  `bytes ${start}-${end}/${fileSize}`,
-            "Accept-Ranges":  "bytes",
-            "Content-Length": end - start + 1,
-            "Content-Type":   "video/x-matroska"
-          });
+          const ext      = path.extname(file.name).toLowerCase();
+          const mimeType = mimeTypes[ext] || "application/octet-stream";
+          const fileSize = file.length;
+          const range    = req.headers.range;
 
-          file.createReadStream({ start, end }).pipe(res);
-        } else {
-          res.writeHead(200, {
-            "Content-Length": fileSize,
-            "Content-Type":   "video/x-matroska",
-            "Accept-Ranges":  "bytes"
-          });
+          // Handle HEAD requests VLC sends before streaming
+          if (req.method === "HEAD") {
+            res.writeHead(200, {
+              "Content-Length": fileSize,
+              "Content-Type":   mimeType,
+              "Accept-Ranges":  "bytes"
+            });
+            res.end();
+            return;
+          }
 
-          file.createReadStream().pipe(res);
-        }
-      });
+          let stream;
 
-      server.listen(argv.port, () => {
-        console.log("\n--------------------------------------------------");
-        console.log("  STREAM LINKS (open in VLC > Network Stream)");
-        console.log("--------------------------------------------------");
-        torrent.files.forEach((f, i) => {
-          console.log(`  ${f.name}`);
-          console.log(`  --> http://localhost:${argv.port}/${i}`);
+          if (range) {
+            const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(startStr, 10);
+            const end   = endStr ? parseInt(endStr, 10) : fileSize - 1;
+            res.writeHead(206, {
+              "Content-Range":  `bytes ${start}-${end}/${fileSize}`,
+              "Accept-Ranges":  "bytes",
+              "Content-Length": end - start + 1,
+              "Content-Type":   mimeType
+            });
+            stream = file.createReadStream({ start, end });
+          } else {
+            res.writeHead(200, {
+              "Content-Length": fileSize,
+              "Content-Type":   mimeType,
+              "Accept-Ranges":  "bytes"
+            });
+            stream = file.createReadStream();
+          }
+
+          // Suppress crash when VLC closes connection early
+          stream.on("error", () => {});
+          res.on("close", () => stream.destroy());
+          stream.pipe(res);
         });
-        console.log("--------------------------------------------------\n");
+
+        server.listen(argv.port, () => {
+          console.log("\n--------------------------------------------------");
+          console.log("  STREAM LINKS (open in VLC > Network Stream)");
+          console.log("--------------------------------------------------");
+          torrent.files.forEach((f, i) => {
+            console.log(`  ${f.name}`);
+            console.log(`  --> http://localhost:${argv.port}/${i}`);
+          });
+          console.log("--------------------------------------------------\n");
+        });
+
       });
     });
   }
