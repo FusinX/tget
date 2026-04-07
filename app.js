@@ -1,126 +1,149 @@
 #!/usr/bin/env node
 
-var optimist = require("optimist");
-var rc = require("rc");
-var clivas = require("clivas");
-var numeral = require("numeral");
-var progress = require("progress");
-var colors = require("colors");
-var parsetorrent = require("parse-torrent");
-var torrentStream = require("torrent-stream");
+"use strict";
 
-var argv = rc(
-  "tget",
-  {},
-  optimist.usage("Usage: $0 magnet-link-or-torrent [,...]").argv
+const WebTorrent = require("webtorrent");
+const numeral    = require("numeral");
+const ProgressBar = require("progress");
+const optimist   = require("optimist");
+const rc         = require("rc");
+
+// ---------------------------------------------------------------------------
+// CLI / config
+// ---------------------------------------------------------------------------
+const argv = rc("tget", {
+  connections: 150,
+  path:        ".",
+  trackers:    []
+}, optimist
+  .usage("Usage: $0 <magnet-link-or-torrent> [...] [options]")
+  .options({
+    path:        { alias: "o", describe: "Output directory",              default: "."   },
+    connections: { alias: "c", describe: "Max peer connections per torrent", default: 150 },
+    trackers:    { alias: "t", describe: "Extra tracker URLs (repeatable)"               }
+  })
+  .argv
 );
 
-var input = argv._;
+const inputs = argv._;
 
-if (input.length == 0) {
+if (inputs.length === 0) {
   optimist.showHelp();
   process.exit(1);
 }
 
-var totalLength = null;
-var downLength = null;
-var bar = null;
-var timerId = null;
-var prevLength = null;
-var engine = null;
-var verified = 0;
-var downloadedPercentage = 0;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const bytes = n => numeral(n).format("0.0b");
 
-var bytes = function(num) {
-  return numeral(num).format("0.0b");
-};
+const extraTrackers = Array.isArray(argv.trackers)
+  ? argv.trackers
+  : argv.trackers
+    ? [argv.trackers]
+    : [
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.tracker.cl:1337/announce",
+        "udp://tracker.torrent.eu.org:451/announce",
+        "udp://tracker.openbittorrent.com:6969/announce"
+      ];
 
-var setupEngine = function(torrent) {
-  engine = torrentStream(torrent, {
-    connections: 100,
-    path: "."
-  });
+// ---------------------------------------------------------------------------
+// Engine
+// ---------------------------------------------------------------------------
+const client = new WebTorrent({ maxConns: argv.connections });
 
-  engine.on("verify", function() {
-    verified++;
-    downloadedPercentage = Math.floor(
-      (verified / engine.torrent.pieces.length) * 100
-    );
-  });
+client.on("error", err => {
+  console.error("Client error:", err.message);
+  process.exit(1);
+});
 
-  engine.on("ready", function() {
-    engine.files.forEach(function(file) {
-      file.select();
-    });
+// Track how many torrents are still active so we know when to exit.
+let active = inputs.length;
 
-    totalLengthBytes = engine.files.reduce(function(prevLength, currFile) {
-      return prevLength + currFile.length;
-    }, 0);
+inputs.forEach(input => {
+  const opts = {
+    path:            argv.path,
+    announce:        extraTrackers,
+    maxWebConns:     argv.connections
+  };
 
-    totalLength = engine.torrent.pieces.length;
+  client.add(input, opts, torrent => onTorrent(torrent));
+});
 
-    speed = bytes(engine.swarm.downloadSpeed()) + "/s";
+// ---------------------------------------------------------------------------
+// Per-torrent handler
+// ---------------------------------------------------------------------------
+function onTorrent(torrent) {
+  const name      = torrent.name || torrent.infoHash;
+  const totalSize = bytes(torrent.length);
 
-    bar = new progress(
-      " downloading " +
-        engine.files.length +
-        " files (" +
-        bytes(totalLengthBytes) +
-        ") [:bar] :percent :etas :speed :peers",
-      {
-        complete: "=",
-        incomplete: " ",
-        width: 30,
-        total: totalLength
-      }
-    );
+  console.log(`\nAdded: ${name}  (${totalSize})`);
+  console.log(`Peers: connecting…  |  Trackers: ${torrent.announce.length}`);
 
-    timerId = setInterval(draw, 500);
-  });
-
-  engine.on("idle", function() {
-    engine.destroy();
-    clearInterval(timerId);
-    clivas.clear();
-    console.log("------------------");
-    engine.files.forEach(function(file) {
-      console.log(file.name + " " + bytes(file.length));
-    });
-    console.log("------------------");
-    console.log(
-      " downloaded " +
-        engine.files.length +
-        " files (" +
-        bytes(totalLength) +
-        ")"
-    );
-  });
-};
-
-for (let arg of input) {
-  parsetorrent.remote(arg, function(err, parsedtorrent) {
-    if (err) {
-      console.error(err.message);
-      process.exit(1);
+  const bar = new ProgressBar(
+    "  [:bar] :percent  :speed  :peers  eta :etas",
+    {
+      complete:   "=",
+      incomplete: " ",
+      width:      32,
+      total:      1000       // we tick in per-mille units for smooth updates
     }
+  );
 
-    setupEngine(parsedtorrent);
+  let lastTicked = 0;
+
+  const timerId = setInterval(() => {
+    const pct        = torrent.progress;           // 0–1
+    const permille   = Math.floor(pct * 1000);
+    const delta      = permille - lastTicked;
+    const speed      = bytes(torrent.downloadSpeed) + "/s";
+    const peers      = torrent.numPeers + " peers";
+
+    if (delta > 0) {
+      bar.tick(delta, { speed, peers });
+      lastTicked = permille;
+    } else {
+      // Redraw current line without advancing bar
+      bar.tick(0, { speed, peers });
+    }
+  }, 500);
+
+  torrent.on("error", err => {
+    clearInterval(timerId);
+    console.error(`\nError [${name}]: ${err.message}`);
+    finish();
   });
-};
 
-var draw = function() {
-  _speed = bytes(engine.swarm.downloadSpeed()) + "/s";
-  speed = "{green:" + _speed + "}";
-  peers = engine.swarm.wires.length + " peers";
+  torrent.on("done", () => {
+    clearInterval(timerId);
 
-  if (verified >= engine.torrent.pieces.length) {
-    clivas.clear();
-    clivas.line(" downloading last few pieces " + speed + " " + peers);
-  } else {
-    bar.tick(verified - prevLength, {
-      speed: _speed.green,
-      peers: peers
-    });
+    // Force bar to 100 %
+    const remaining = 1000 - lastTicked;
+    if (remaining > 0) bar.tick(remaining, { speed: "0b/s", peers: "0 peers" });
+
+    console.log("\n--------------------------------------------------");
+    torrent.files.forEach(f => console.log(`  ${f.path}  (${bytes(f.length)})`));
+    console.log("--------------------------------------------------");
+    console.log(
+      `  Downloaded ${torrent.files.length} file(s)  —  ${bytes(torrent.length)}\n`
+    );
+
+    torrent.destroy(() => finish());
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown
+// ---------------------------------------------------------------------------
+function finish() {
+  active--;
+  if (active <= 0) {
+    client.destroy(() => process.exit(0));
   }
-  prevLength = verified;
-};
+}
+
+process.on("SIGINT", () => {
+  console.log("\nInterrupted — closing…");
+  client.destroy(() => process.exit(130));
+});
