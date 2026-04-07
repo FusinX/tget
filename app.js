@@ -9,13 +9,17 @@ import rc          from "rc";
 const argv = rc("tget", {
   connections: 150,
   path:        ".",
-  trackers:    []
+  trackers:    [],
+  stream:      false,
+  port:        8888
 }, optimist
   .usage("Usage: $0 <magnet-link-or-torrent> [...] [options]")
   .options({
-    path:        { alias: "o", describe: "Output directory",                 default: "."  },
-    connections: { alias: "c", describe: "Max peer connections per torrent", default: 150  },
-    trackers:    { alias: "t", describe: "Extra tracker URLs (repeatable)"                 }
+    path:        { alias: "o", describe: "Output directory",                 default: "."    },
+    connections: { alias: "c", describe: "Max peer connections per torrent", default: 150    },
+    trackers:    { alias: "t", describe: "Extra tracker URLs (repeatable)"                   },
+    stream:      { alias: "s", describe: "Generate stream URLs for VLC",     boolean: true   },
+    port:        { alias: "p", describe: "Port for stream server",           default: 8888   }
   })
   .argv
 );
@@ -61,6 +65,26 @@ function onTorrent(torrent) {
   console.log(`\nAdded: ${name}  (${bytes(torrent.length)})`);
   console.log(`Peers: connecting...  |  Trackers: ${torrent.announce.length}`);
 
+  // -------------------------------------------------------------------------
+  // Stream server
+  // -------------------------------------------------------------------------
+  if (argv.stream) {
+    const server = torrent.createServer();
+    server.listen(argv.port, () => {
+      console.log("\n--------------------------------------------------");
+      console.log("  STREAM LINKS (open in VLC > Network Stream)");
+      console.log("--------------------------------------------------");
+      torrent.files.forEach((f, i) => {
+        console.log(`  ${f.name}`);
+        console.log(`  --> http://localhost:${argv.port}/${i}`);
+      });
+      console.log("--------------------------------------------------\n");
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Progress bar
+  // -------------------------------------------------------------------------
   const bar = new ProgressBar(
     "  [:bar] :percent  :speed  :peers  eta :etas",
     { complete: "=", incomplete: " ", width: 32, total: 1000 }
