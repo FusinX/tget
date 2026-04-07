@@ -1,140 +1,95 @@
-<p>
-  <a href="https://www.npmjs.com/package/t-get">
-    <img alt="tget is wget for torrents" src="https://raw.github.com/FusinX/tget/master/banner.png">
-  </a>
+<p align="center">
+<a href="https://github.com/FusinX/tget">
+<img alt="tget is wget for torrents" src="https://raw.githubusercontent.com/FusinX/tget/master/banner.png" width="600">
+</a>
 </p>
-
 # tget
-
-[tget](https://www.npmjs.com/package/t-get) is wget for torrents — a fast, lightweight CLI torrent client with built-in streaming support.
-
-## Install
-
+**tget** is a modern, fast, and lightweight CLI torrent client for Linux, macOS, and Android (Termux). It features built-in HTTP streaming support, allowing you to watch movies or listen to music while they download.
+## ⚡ Quick Start
+### 1. Install System Dependencies
+tget requires a C++ compiler to build high-performance networking modules (node-datachannel). Run the command for your system:
+| Platform | Command |
+|---|---|
+| **Ubuntu / Debian** | sudo apt install build-essential python3 nodejs npm |
+| **Fedora** | sudo dnf groupinstall "Development Tools" python3 |
+| **Arch Linux** | sudo pacman -S base-devel python |
+| **Termux (Android)** | pkg install clang make python nodejs |
+### 2. Install tget
+To install this specific modified version directly from the source:
 ```bash
-npm install -g t-get
+# Clone the repository
+git clone https://github.com/FusinX/tget.git
+cd tget
+
+# Install dependencies and link globally
+npm install
+npm install -g .
+
 ```
-
-## Requirements
-
-Node.js v18 or higher.
-
-## Usage
-
-tget works with a magnet link or a torrent file.
-
+## 🚀 Usage
+tget works with magnet links or local .torrent files.
 ```bash
+# Basic download
 tget 'magnet:?xt=urn:btih:...'
-tget /path/to/file.torrent
+
+# Download from a file
+tget ./movie.torrent
+
 ```
-
-### Download to a specific directory
-
+### 📂 File Management
+**List files inside a torrent:**
 ```bash
-tget 'magnet:?xt=urn:btih:...' -o ~/Downloads
+tget 'magnet:...' --list
+
 ```
-
-### List files inside a torrent without downloading
-
+**Download specific files (using indices from --list):**
 ```bash
-tget 'magnet:?xt=urn:btih:...' --list
+tget 'magnet:...' --select 0,2 -o ~/Downloads
+
 ```
-
-### Download specific files only
-
-Use the index from `--list`:
-
+### 📺 Streaming Support
+**Stream while downloading (saves to disk):**
 ```bash
-tget 'magnet:?xt=urn:btih:...' --select 0,2 -o ~/Downloads
+tget 'magnet:...' -o ~/Downloads --stream
+
 ```
-
-### Stream while downloading
-
-Generates an HTTP stream URL you can open in VLC via **Media > Open Network Stream**:
-
+**Stream only (RAM only, no disk write):**
 ```bash
-tget 'magnet:?xt=urn:btih:...' -o ~/Downloads --stream
+tget 'magnet:...' --stream-only --player vlc
+
 ```
-
-### Stream only (nothing saved to disk)
-
-```bash
-tget 'magnet:?xt=urn:btih:...' --stream-only
-```
-
-### Auto-open stream in VLC
-
-```bash
-tget 'magnet:?xt=urn:btih:...' --stream-only --player vlc
-```
-
-### Multiple torrents simultaneously
-
-```bash
-tget 'magnet:?xt=urn:btih:AAA...' 'magnet:?xt=urn:btih:BBB...' -o ~/Downloads
-```
-
-## All Options
-
+## 🛠 Options & Flags
 | Flag | Alias | Default | Description |
 |---|---|---|---|
-| `--path` | `-o` | `.` | Output directory |
-| `--connections` | `-c` | `150` | Max peer connections |
-| `--trackers` | `-t` | — | Extra tracker URLs (repeatable) |
-| `--trackers-auto` | — | `false` | Fetch latest public tracker list on startup |
-| `--stream` | `-s` | `false` | Stream while downloading |
-| `--stream-only` | `-S` | `false` | Stream only, do not save to disk |
-| `--port` | `-p` | `8888` | Stream server port |
-| `--prebuffer` | `-b` | `5` | MB to buffer before stream URL appears |
-| `--list` | — | `false` | List files in torrent and exit |
-| `--select` | — | — | File indices to download e.g. `--select 0,2` |
-| `--seed` | — | `false` | Keep seeding after download completes |
-| `--seed-ratio` | — | `0` | Stop seeding at this ratio e.g. `1.5` |
-| `--download-limit` | — | `0` | Download speed limit in MB/s (0 = unlimited) |
-| `--upload-limit` | — | `0` | Upload speed limit in MB/s (0 = unlimited) |
-| `--player` | — | — | Auto-open stream in a player e.g. `--player vlc` |
-| `--json` | — | `false` | Output status as JSON for scripting |
-
-## Keyboard Controls
-
-While a download is running:
-
-| Key | Action |
-|---|---|
-| `P` | Pause / resume |
-| `Ctrl+C` | Stop and exit |
-
-## JSON Mode
-
-Pipe output into other tools:
-
+| --path | -o | . | Output directory |
+| --connections | -c | 150 | Max peer connections |
+| --trackers-auto | — | false | Fetch latest public tracker list on startup |
+| --stream | -s | false | Stream while downloading |
+| --stream-only | -S | false | Memory-only streaming |
+| --port | -p | 8888 | Stream server port |
+| --prebuffer | -b | 5 | MB to buffer before stream starts |
+| --list | — | false | Show file list and exit |
+| --select | — | — | Indices to download (e.g. 0,2,3) |
+| --seed | — | false | Continue seeding after download |
+| --player | — | — | Auto-open in player (e.g. vlc, mpv) |
+| --json | — | false | Raw JSON output for scripts |
+## ⌨️ Keyboard Controls
+While the client is active:
+ * **P**: Toggle Pause / Resume
+ * **L**: Toggle detailed peer logs
+ * **Ctrl + C**: Graceful exit (saves progress)
+## 🤖 JSON Mode
+Perfect for piping into jq or building custom dashboards.
 ```bash
-tget 'magnet:?xt=urn:btih:...' --json | jq .
+tget 'magnet:...' --json | jq .
+
 ```
-
-Each line is a JSON object:
-
-```json
-{"name":"file.mkv","progress":0.42,"speed":3145728,"peers":18,"downloaded":524288000,"total":1258291200}
-```
-
-When a stream is ready in JSON mode:
-
-```json
-{"event":"stream-ready","name":"file.mkv","url":"http://localhost:8888/<infoHash>/0"}
-```
-
-## Streaming Notes
-
-- The stream URL is held back until the prebuffer threshold is reached (default 5MB). This gives VLC a head start and avoids stuttering.
-- When VLC connects, tget automatically switches to sequential piece selection so pieces arrive in playback order.
-- Range requests are fully supported, so seeking works.
-- In `--stream-only` mode, only the largest file in the torrent is fetched to avoid wasting bandwidth.
-- Multiple simultaneous streams are supported — each torrent gets its own namespaced route: `http://localhost:<port>/<infoHash>/<fileIndex>`.
-
-## Credits
-
-Built on [WebTorrent](https://github.com/webtorrent/webtorrent). Originally inspired by [peerflix](https://github.com/mafintosh/peerflix) and [jeffjose/tget](https://github.com/jeffjose/tget).
-
-## License
-
-MIT
+## 📝 Technical Notes
+ * **Sequential Selection:** When a player connects to the stream, tget automatically prioritizes the pieces needed for playback.
+ * **Range Requests:** Supports seeking. You can jump to the middle of a movie in VLC, and tget will re-prioritize pieces accordingly.
+ * **Efficiency:** In --stream-only mode, only the selected file is kept in memory; others are ignored to save bandwidth.
+## ❤️ Credits
+Modified and maintained by **FusinX**.
+Built on WebTorrent. Inspired by peerflix.
+## 📄 License
+MIT © FusinX
