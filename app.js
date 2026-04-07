@@ -69,19 +69,18 @@ function onTorrent(torrent) {
   // Stream server
   // -------------------------------------------------------------------------
   if (argv.stream) {
-    const server = torrent.createServer();
+    const server = client.createServer();
     server.listen(argv.port, () => {
       console.log("\n--------------------------------------------------");
       console.log("  STREAM LINKS (open in VLC > Network Stream)");
       console.log("--------------------------------------------------");
       torrent.files.forEach((f, i) => {
         console.log(`  ${f.name}`);
-        console.log(`  --> http://localhost:${argv.port}/${i}`);
+        console.log(`  --> http://localhost:${argv.port}/${torrent.infoHash}/${i}`);
       });
       console.log("--------------------------------------------------\n");
     });
   }
-
   // -------------------------------------------------------------------------
   // Progress bar
   // -------------------------------------------------------------------------
